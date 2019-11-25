@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys a serverless application using API Gateway, DynamoDB, Lambda functions, and associated roles for all services.
+
+Parameters:
+  VolumeType:
+    Type: String
+    Default: gp2
+    MinLength: 1
+  VolumeSize:
+    Type: String
+    Default: 5
+    MinLength: 1
+  AZ:
+    Type: String
+    Default: us-east-1c
+    MinLength: 1
+  VPCID:
+    Type: String
+    Default: vpc-1a7d3960
+    MinLength: 1
+  ImageId:
+    Type: String
+    Default: ami-00068cd7555f543d5
+    MinLength: 1
+  InstanceType:
+    Type: String
+    Default: t3a.small
+    MinLength: 1
+  KeyPairName:
+    Type: String
+    Default: gj1
+    MinLength: 1
+  SubnetId:
+    Type: String
+    Default: subnet-a5dbec8b
+    MinLength: 1
+  S3BucketName:
+    Type: String
+    Default: gj-media
+    MinLength: 1
+  AccessKey:
+    Type: String
+    Default: '123'
+    MinLength: 1
+  SecretAccessKey:
+    Type: String
+    Default: '321'
+    MinLength: 1
+
+
+
+Resources:
+  LsioPlexServerStorageVolume:
+    Type: 'AWS::EC2::Volume'
+    Properties:
+      Size:
+        Ref: VolumeSize
+      VolumeType:
+        Ref: VolumeType
+      AvailabilityZone:
+        Ref: AZ
+  LsioPlexServerFirewallRules:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: LsioPlexServerFirewallRules
+      GroupDescription: Restrict inbound access only to the Plex and SSH ports
+      VpcId:
+        Ref: VPCID
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: '-1'
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: '32400'
+          ToPort: '32400'
+  LsioPlexServerInstance:
+    Type: 'AWS::EC2::Instance'
+    DependsOn:
+      - LsioPlexServerFirewallRules
+      - LsioPlexServerStorageVolume
+    Properties:
+      ImageId: 
+        Ref: ImageId
+      InstanceType:
+        Ref: InstanceType
+      KeyName:
+        Ref: KeyPairName
+      AvailabilityZone:
+        Ref: AZ
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId:
+            Ref: SubnetId
+          GroupSet:
+            - !Ref LsioPlexServerFirewallRules
+      Volumes:
+        - Device: /dev/sdk
+          VolumeId: !Ref LsioPlexServerStorageVolume
+      UserData: !Base64 
+        'Fn::Join':
+          - |+
+
+          - - '#!/bin/bash -v'
+            - fstype=`file -s /dev/xvdk`
+            - 'if [ "$fstype" == "/dev/xvdk: data" ]'
+            - then
+            - '    mkfs -t ext4 /dev/sdk'
+            - fi
+            - mkdir -p /data/plex
+            - mkdir -p /data/media
+            - chmod 750 /data/plex
+            - chmod 750 /data/media
+            - mount /dev/sdk /data/media
+            - mkdir -p /data/media/movies
+            - mkdir -p /data/media/tv
+            - chmod -R 750 /data/media
+            - 'chown -R ec2-user:ec2-user /data/media'
+            - 'chown -R ec2-user:ec2-user /data/plex'
+            - 'echo "/dev/sdk /data/media ext4 defaults,nofail 0 2" >> /etc/fstab'
+            - yum update -y
+            - yum install -y docker
+            - yum install gcc libstdc++-devel gcc-c++ fuse fuse-devel curl-devel libxml2-devel openssl-devel mailcap -y
+            - yum install module-init-tools -y
+            - yum install git -y
+            - yum install automake -y
+            - cd /usr/src/
+            - wget https://github.com/libfuse/libfuse/releases/download/fuse-3.0.0/fuse-3.0.0.tar.gz
+            - tar xzf fuse-3.0.0.tar.gz
+            - cd fuse-3.0.0
+            - ./configure
+            - make && make install
+            - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+            - ldconfig
+            - modprobe fuse
+            - git clone https://github.com/s3fs-fuse/s3fs-fuse.git
+            - cd s3fs-fuse
+            - ./autogen.sh
+            - ./configure
+            - make
+            - make install
+            - !Sub >-
+                echo ${AccessKey}":"${SecretAccessKey} > /etc/passwd-s3fs
+            - chmod 600 /etc/passwd-s3fs 
+            - cd /data/media
+            - rm -rf *
+            - mkdir movies
+            - s3fs gj-media /data/media/movies -o allow_other -o umask=0002 -o passwd_file=/etc/passwd-s3fs
+            - service docker start
+            - usermod -a -G docker ec2-user
+            - >-
+              docker create --name=plex --net=host -e VERSION=latest -e
+              PUID=$(id -u ec2-user) -e PGID=$(id -g ec2-user) -v
+              /data/plex:/config -v /data/media/tv:/data/tvshows -v
+              /data/media/movies:/data/movies --restart=always linuxserver/plex
+            - docker start plex
