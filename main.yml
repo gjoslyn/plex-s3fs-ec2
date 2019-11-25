@@ -123,39 +123,53 @@ Resources:
             - 'chown -R ec2-user:ec2-user /data/media'
             - 'chown -R ec2-user:ec2-user /data/plex'
             - 'echo "/dev/sdk /data/media ext4 defaults,nofail 0 2" >> /etc/fstab'
+            - echo "just finished partition" >> /tmp/bootstrap.log
             - yum update -y
             - yum install -y docker
             - yum install gcc libstdc++-devel gcc-c++ fuse fuse-devel curl-devel libxml2-devel openssl-devel mailcap -y
             - yum install module-init-tools -y
             - yum install git -y
             - yum install automake -y
+            - echo "just finished all yum installs" >> /tmp/bootstrap.log
             - cd /usr/src/
             - wget https://github.com/libfuse/libfuse/releases/download/fuse-3.0.0/fuse-3.0.0.tar.gz
             - tar xzf fuse-3.0.0.tar.gz
             - cd fuse-3.0.0
             - ./configure
             - make && make install
+            - echo "just finished fuse" >> /tmp/bootstrap.log
             - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
             - ldconfig
             - modprobe fuse
+            - echo "just finished modprobe" >> /tmp/bootstrap.log
             - git clone https://github.com/s3fs-fuse/s3fs-fuse.git
             - cd s3fs-fuse
             - ./autogen.sh
             - ./configure
             - make
             - make install
+            - echo "just finished s3fs" >> /tmp/bootstrap.log
             - !Sub >-
                 echo ${AccessKey}":"${SecretAccessKey} > /etc/passwd-s3fs
-            - chmod 600 /etc/passwd-s3fs 
+            - echo "just finished export of access keys" >> /tmp/bootstrap.log
+            - whoami >> /tmp/bootstrap.log
+            - chmod 600 /etc/passwd-s3fs
+            - echo "just finished file permissions" >> /tmp/bootstrap.log
             - cd /data/media
             - rm -rf *
             - mkdir movies
-            - s3fs gj-media /data/media/movies -o allow_other -o umask=0002 -o passwd_file=/etc/passwd-s3fs
+            - echo "just finished making movie folder" >> /tmp/bootstrap.log
+            - !Sub >-
+                s3fs ${S3BucketName} /data/media/movies -o allow_other -o umask=0002 -o passwd_file=/etc/passwd-s3fs
+            - echo "just finished mounting s3fs" >> /tmp/bootstrap.log
             - service docker start
+            - echo "just finished starting docker service" >> /tmp/bootstrap.log
             - usermod -a -G docker ec2-user
             - >-
               docker create --name=plex --net=host -e VERSION=latest -e
               PUID=$(id -u ec2-user) -e PGID=$(id -g ec2-user) -v
               /data/plex:/config -v /data/media/tv:/data/tvshows -v
               /data/media/movies:/data/movies --restart=always linuxserver/plex
+            - echo "just finished creating docker instance" >> /tmp/bootstrap.log
             - docker start plex
+            - echo "just finished starting container" >> /tmp/bootstrap.log
