@@ -4,6 +4,16 @@
 
 
 Deployment:
+- Update parameters:
+    * AvailabilityZone
+    * VPCID
+    * ImageID (assumes Amazon Linux)
+    * KeyPairName
+    * SubnetID
+    * S3BucketName
+    * AccessKey
+    * SecretAccessKey
+    
 
 - Deploy CloudFormation Stack which creates the following resources:
 
