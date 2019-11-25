@@ -31,7 +31,7 @@ ssh -i YOURKEY.pem ec2-user@[EIP or public DNS name] -L 3307:127.0.0.1:32400 -N
     * Allow Fallback to Insecure Connections can be configured in General settings
     * Video quality and  Automatically adjust quality (Beta) are in the Quality settings area
 
-- Then launch a browser locally and browse to http://[EIP or DNS]:3307/web which will begin the setup
+- Then navigate to http://[EIP or DNS]:3307/web which allows modification of libraries, settings, etc.
 
 ## Known issues:
 
